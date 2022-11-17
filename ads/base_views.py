@@ -39,7 +39,7 @@ class BaseDetailView(DetailView):
     fk_fields: list = None
 
     def get(self, *args, **kwargs):
-        data = get_object_or_404(self.model.objects.select_related(*self.fk_fields))
+        data = self.get_object()
 
         return JsonResponse(model_to_dict(data))
 

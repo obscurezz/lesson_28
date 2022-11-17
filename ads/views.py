@@ -1,6 +1,8 @@
 import json
 
+from django.core.paginator import Paginator
 from django.db import IntegrityError
+from django.db.models import Count, QuerySet, Q
 from django.forms import model_to_dict
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -10,6 +12,7 @@ from django.views.generic import UpdateView
 
 from ads.base_views import BaseListView, BaseDetailView, BaseCreateView, BaseDeleteView, BaseUpdateView
 from ads.models import Ad, Category, Location, User
+from homework_28.settings import TOTAL_ON_PAGE
 
 
 # block of full lists
@@ -29,6 +32,27 @@ class LocationsListView(BaseListView):
 class UsersListView(BaseListView):
     model = User
     ordering_field = "username"
+    queryset = User.objects.all()
+
+    def get(self, request, *args, **kwargs):
+        super().get(request, *args, **kwargs)
+
+        self.object_list: QuerySet = self.object_list.order_by(self.ordering_field).annotate(
+            total_ads=Count('ad', filter=Q(ad__is_published__gte=True)))
+        paginator = Paginator(self.object_list, TOTAL_ON_PAGE)
+        page_number = request.GET.get("page")
+        page_object = paginator.get_page(page_number)
+
+        resulted_objects: list[dict] = [{'id': position.id, self.ordering_field: getattr(position, self.ordering_field),
+                                         'total_ads': position.total_ads}
+                                        for position in page_object]
+        response = {
+            'objects': resulted_objects,
+            'num_pages': paginator.num_pages,
+            'total': paginator.count
+        }
+
+        return JsonResponse(response)
 
 
 # block of detail view of exact object
@@ -38,7 +62,8 @@ class AdsDetailView(BaseDetailView):
     fk_fields = ["author", "category"]
 
     def get(self, *args, **kwargs):
-        data = get_object_or_404(self.model.objects.select_related(*self.fk_fields))
+        data = self.get_object(self.model.objects.select_related('author').select_related('category'))
+
         result_data = model_to_dict(data)
         result_data['image'] = data.get_image_url
 
@@ -57,6 +82,12 @@ class UsersDetailView(BaseDetailView):
     model = User
     ordering_field = "username"
     fk_fields = ["location"]
+
+    def get(self, *args, **kwargs):
+        data = self.get_object(self.model.objects.select_related('location'))
+        result_data = model_to_dict(data)
+
+        return JsonResponse(result_data)
 
 
 # block of insert views
